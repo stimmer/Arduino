@@ -39,30 +39,60 @@ public:
 };
 extern USBDevice_ USBDevice;
 
+class LockEP
+{
+	irqflags_t flags;
+public:
+	LockEP(uint32_t ep) : flags(cpu_irq_save())
+	{
+	}
+	~LockEP()
+	{
+		cpu_irq_restore(flags);
+	}
+};
+
 //================================================================================
 //================================================================================
 //	Serial over CDC (Serial1 is the physical port)
 
 class Serial_ : public Stream
 {
-private:
-	RingBuffer *_cdc_rx_buffer;
+
 public:
-	void begin(uint32_t baud_count);
-	void begin(uint32_t baud_count, uint8_t config);
+	void begin(uint32_t baud_count = 0);
 	void end(void);
 
 	virtual int available(void);
-	virtual void accept(void);
 	virtual int peek(void);
 	virtual int read(void);
+	virtual size_t read(uint8_t *buffer, size_t size);	
 	virtual void flush(void);
 	virtual size_t write(uint8_t);
 	virtual size_t write(const uint8_t *buffer, size_t size);
 	using Print::write; // pull in write(str) from Print
+
 	operator bool();
+
+	size_t readBytes( char *buffer, size_t length){return read((uint8_t *)buffer,length);}
+	
+private:
+	bool peeked;
+	uint8_t peeked_u8;
 };
 extern Serial_ SerialUSB;
+
+extern uint32_t _usb_tx_led_time;
+#define USB_TX_LED_OFF _usb_tx_led_time=GetTickCount()-1
+#define USB_TX_LED_ON  _usb_tx_led_time=GetTickCount()+200
+#define USB_TX_LED_UPDATE if((_usb_tx_led_time-GetTickCount())<=200)PIOA->PIO_CODR=1<<21; else PIOA->PIO_SODR=1<<21;
+
+extern uint32_t _usb_rx_led_time;
+#define USB_RX_LED_OFF _usb_rx_led_time=GetTickCount()-1
+#define USB_RX_LED_ON  _usb_rx_led_time=GetTickCount()+200
+#define USB_RX_LED_UPDATE if((_usb_rx_led_time-GetTickCount())<=200)PIOC->PIO_CODR=1<<30; else PIOC->PIO_SODR=1<<30;
+
+#define USB_LED_UPDATE do{USB_RX_LED_UPDATE;USB_TX_LED_UPDATE;}while(0)
 
 //================================================================================
 //================================================================================

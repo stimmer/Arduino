@@ -14,28 +14,24 @@
 ** SOFTWARE.
 */
 
+/* turbocharged by stimmer 20130202
+ *  removed buffering, making code simpler and faster
+ *  added multi byte read: size_t Serial_::read(uint8_t *buffer, size_t size)
+ *  added LED blink code
+ * please test
+*/
+
 #include "Arduino.h"
 #include "USBAPI.h"
 #include "Reset.h"
 
 #ifdef CDC_ENABLED
 
-#define CDC_SERIAL_BUFFER_SIZE	512
-
 /* For information purpose only since RTS is not always handled by the terminal application */
 #define CDC_LINESTATE_DTR		0x01 // Data Terminal Ready
 #define CDC_LINESTATE_RTS		0x02 // Ready to Send
 
 #define CDC_LINESTATE_READY		(CDC_LINESTATE_RTS | CDC_LINESTATE_DTR)
-
-struct ring_buffer
-{
-	uint8_t buffer[CDC_SERIAL_BUFFER_SIZE];
-	volatile uint32_t head;
-	volatile uint32_t tail;
-};
-
-ring_buffer cdc_rx_buffer = { { 0 }, 0, 0};
 
 typedef struct
 {
@@ -144,93 +140,84 @@ bool WEAK CDC_Setup(Setup& setup)
 	return false;
 }
 
-int _serialPeek = -1;
 void Serial_::begin(uint32_t baud_count)
 {
-}
-
-void Serial_::begin(uint32_t baud_count, uint8_t config)
-{
+	peeked=0;
+	pinMode(72,OUTPUT);
+	pinMode(73,OUTPUT);  
 }
 
 void Serial_::end(void)
 {
 }
 
-void Serial_::accept(void)
-{
-	static uint32_t guard = 0;
-
-	// synchronized access to guard
-	do {
-		if (__LDREXW(&guard) != 0) {
-			__CLREX();
-			return;  // busy
-		}
-	} while (__STREXW(1, &guard) != 0); // retry until write succeed
-
-	ring_buffer *buffer = &cdc_rx_buffer;
-	uint32_t i = (uint32_t)(buffer->head+1) % CDC_SERIAL_BUFFER_SIZE;
-
-	// if we should be storing the received character into the location
-	// just before the tail (meaning that the head would advance to the
-	// current location of the tail), we're about to overflow the buffer
-	// and so we don't write the character or advance the head.
-	while (i != buffer->tail) {
-		uint32_t c;
-		if (!USBD_Available(CDC_RX)) {
-			udd_ack_fifocon(CDC_RX);
-			break;
-		}
-		c = USBD_Recv(CDC_RX);
-		// c = UDD_Recv8(CDC_RX & 0xF);
-		buffer->buffer[buffer->head] = c;
-		buffer->head = i;
-
-		i = (i + 1) % CDC_SERIAL_BUFFER_SIZE;
-	}
-
-	// release the guard
-	guard = 0;
-}
-
 int Serial_::available(void)
 {
-	ring_buffer *buffer = &cdc_rx_buffer;
-	return (unsigned int)(CDC_SERIAL_BUFFER_SIZE + buffer->head - buffer->tail) % CDC_SERIAL_BUFFER_SIZE;
+	LockEP lock(CDC_RX);
+	USB_LED_UPDATE;  
+	int r=UDD_FifoByteCount(CDC_RX);
+	return r+peeked;	
 }
 
-int Serial_::peek(void)
+int Serial_::peek(void) // not well tested yet - I don't know of any code which uses peek
 {
-	ring_buffer *buffer = &cdc_rx_buffer;
-
-	if (buffer->head == buffer->tail)
-	{
+	LockEP lock(CDC_RX);
+	USB_LED_UPDATE;
+	if(peeked) return peeked_u8;
+	if(!UDD_FifoByteCount(CDC_RX)){
 		return -1;
 	}
-	else
-	{
-		return buffer->buffer[buffer->tail];
+	
+	peeked=1;
+	peeked_u8=UDD_Recv8(CDC_RX);
+	if (!UDD_FifoByteCount(CDC_RX)){
+		UDD_ReleaseRX(CDC_RX);
 	}
+	return peeked_u8;
 }
 
 int Serial_::read(void)
 {
-	ring_buffer *buffer = &cdc_rx_buffer;
-
-	// if the head isn't ahead of the tail, we don't have any characters
-	if (buffer->head == buffer->tail)
-	{
+	LockEP lock(CDC_RX);
+  	USB_LED_UPDATE;
+	if(peeked){
+		peeked=0;
+		return peeked_u8;	  
+	}
+	if (!UDD_FifoByteCount(CDC_RX))
 		return -1;
+	
+	uint8_t c = UDD_Recv8(CDC_RX);
+	if (!UDD_FifoByteCount(CDC_RX)){
+		UDD_ReleaseRX(CDC_RX);
 	}
-	else
-	{
-		unsigned char c = buffer->buffer[buffer->tail];
-		buffer->tail = (unsigned int)(buffer->tail + 1) % CDC_SERIAL_BUFFER_SIZE;
-		if (USBD_Available(CDC_RX))
-			accept();
-		return c;
+	return c;
+}
+
+size_t Serial_::read(uint8_t *buffer, size_t size)
+{
+	LockEP lock(CDC_RX);
+	USB_LED_UPDATE;
+
+	if(!peeked){
+		size=min(size,UDD_FifoByteCount(CDC_RX));
+		if(size<=0)return 0;
+		UDD_Recv(CDC_RX, buffer, size);
+		if (!UDD_FifoByteCount(CDC_RX)){
+			UDD_ReleaseRX(CDC_RX);    
+		}
+		return size;
 	}
+	
+	peeked=0;
+	buffer[0]=peeked_u8;
+	size=min(size-1,UDD_FifoByteCount(CDC_RX));
+	if(size<=0)return 1;
+	UDD_Recv(CDC_RX, buffer+1, size);
+	if (!UDD_FifoByteCount(CDC_RX)){
+		UDD_ReleaseRX(CDC_RX); 
+	}
+	return size+1;  	
 }
 
 void Serial_::flush(void)
@@ -251,16 +238,25 @@ size_t Serial_::write(const uint8_t *buffer, size_t size)
 	// or locks up, or host virtual serial port hangs)
 	if (_usbLineInfo.lineState > 0)
 	{
-		int r = USBD_Send(CDC_TX, buffer, size);
+		LockEP lock(CDC_TX);
+	  
+		USB_TX_LED_ON;
+		USB_LED_UPDATE;
+    
+		uint32_t n;
+		int r = size;
+		int p = 0;
+		int c = 0;
+		int t = 0;
 
-		if (r > 0)
-		{
-			return r;
-		} else
-		{
-			setWriteError();
-			return 0;
+		while (r)
+		{        
+			c = min(EPX_SIZE,r);
+			t=UDD_Send(CDC_TX, &buffer[p], c);
+			r-=t;
+			p+=t;			
 		}
+		return n;
 	}
 	setWriteError();
 	return 0;
