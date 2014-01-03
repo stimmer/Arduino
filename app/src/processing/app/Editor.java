@@ -439,6 +439,8 @@ public class Editor extends JFrame implements RunnerListener {
     textarea.setEditable(!external);
     saveMenuItem.setEnabled(!external);
     saveAsMenuItem.setEnabled(!external);
+    
+    textarea.setDisplayLineNumbers(Preferences.getBoolean("editor.linenumbers"));
 
     TextAreaPainter painter = textarea.getPainter();
     if (external) {
@@ -2005,8 +2007,6 @@ public class Editor extends JFrame implements RunnerListener {
     try {
       stopHandler.run();
     } catch (Exception e) { }
-
-    sketch.cleanup();
   }
 
 
