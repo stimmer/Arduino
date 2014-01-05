@@ -198,9 +198,11 @@ size_t Serial_::read(uint8_t *buffer, size_t size)
 {
 	LockEP lock(CDC_RX);
 	USB_LED_UPDATE;
+	size_t fbc=UDD_FifoByteCount(CDC_RX);
 
 	if(!peeked){
-		size=min(size,UDD_FifoByteCount(CDC_RX));
+		
+		if(fbc<size)size=fbc;
 		if(size<=0)return 0;
 		UDD_Recv(CDC_RX, buffer, size);
 		if (!UDD_FifoByteCount(CDC_RX)){
@@ -211,7 +213,8 @@ size_t Serial_::read(uint8_t *buffer, size_t size)
 	
 	peeked=0;
 	buffer[0]=peeked_u8;
-	size=min(size-1,UDD_FifoByteCount(CDC_RX));
+	size--;
+	if(fbc<size)size=fbc;
 	if(size<=0)return 1;
 	UDD_Recv(CDC_RX, buffer+1, size);
 	if (!UDD_FifoByteCount(CDC_RX)){
@@ -224,6 +227,7 @@ void Serial_::flush(void)
 {
 	USBD_Flush(CDC_TX);
 }
+
 
 size_t Serial_::write(const uint8_t *buffer, size_t size)
 {
@@ -252,7 +256,8 @@ size_t Serial_::write(const uint8_t *buffer, size_t size)
 		while (r)
 		{        
 			c = min(EPX_SIZE,r);
-			t=UDD_Send(CDC_TX, &buffer[p], c);
+			t=UDD_Send(CDC_TX,&buffer[p], c);
+
 			r-=t;
 			p+=t;			
 		}

@@ -595,6 +595,7 @@ static void USB_ISR(void)
 		USB_LED_UPDATE;
 	}
 
+
 	if (Is_udd_sof())
 	{
 		udd_ack_sof();
@@ -742,6 +743,8 @@ static void USB_ISR(void)
 					// Enable interrupt for CDC reception from host (OUT packet)
 					udd_enable_out_received_interrupt(CDC_RX);
 					udd_enable_endpoint_interrupt(CDC_RX);
+
+
 #endif
 				}
 				else
