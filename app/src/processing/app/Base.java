@@ -1323,8 +1323,6 @@ public class Base {
     } catch (IOException e) {
       showWarning(_("Error"), _("Error loading libraries"), e);
     }
-    String currentArch = Base.getTargetPlatform().getId();
-    libraries = libraries.filterByArchitecture(currentArch);
 
     // Populate importToLibraryTable
     importToLibraryTable = new HashMap<String, Library>();
@@ -1554,6 +1552,10 @@ public class Base {
     Preferences.set("target_platform", targetPlatform.getId());
     Preferences.set("board", targetBoard.getId());
 
+    File platformFolder = targetPlatform.getFolder();
+    Preferences.set("runtime.platform.path", platformFolder.getAbsolutePath());
+    Preferences.set("runtime.hardware.path", platformFolder.getParentFile().getAbsolutePath());
+    
     filterVisibilityOfSubsequentBoardMenus(targetBoard, 1);
 
     onBoardOrPortChange();
