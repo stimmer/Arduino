@@ -140,7 +140,7 @@ public class Base {
       portableFolder = null;
 
     // run static initialization that grabs all the prefs
-    Preferences.init(null);
+    Preferences.init(args);
 
     try {
       File versionFile = getContentFile("lib/version.txt");
@@ -320,7 +320,8 @@ public class Base {
 
     boolean doUpload = false;
     boolean doVerify = false;
-    boolean doVerbose = false;
+    boolean doVerboseBuild = false;
+    boolean doVerboseUpload = false;;
     String selectBoard = null;
     String selectPort = null;
     String currentDirectory = System.getProperty("user.dir");
@@ -337,35 +338,51 @@ public class Base {
         continue;
       }
       if (args[i].equals("--verbose") || args[i].equals("-v")) {
-        doVerbose = true;
+        doVerboseBuild = true;
+        doVerboseUpload = true;
+        continue;
+      }
+      if (args[i].equals("--verbose-build")) {
+        doVerboseBuild = true;
+        continue;
+      }
+      if (args[i].equals("--verbose-upload")) {
+        doVerboseUpload = true;
         continue;
       }
       if (args[i].equals("--board")) {
         i++;
         if (i >= args.length)
-          showError(null, "Argument required for --board", 3);
+          showError(null, _("Argument required for --board"), 3);
         selectBoard = args[i];
         continue;
       }
       if (args[i].equals("--port")) {
         i++;
         if (i >= args.length)
-          showError(null, "Argument required for --port", 3);
+          showError(null, _("Argument required for --port"), 3);
         selectPort = args[i];
         continue;
       }
       if (args[i].equals("--curdir")) {
         i++;
         if (i >= args.length)
-          showError(null, "Argument required for --curdir", 3);
+          showError(null, _("Argument required for --curdir"), 3);
         currentDirectory = args[i];
         continue;
       }
       if (args[i].equals("--pref")) {
         i++;
         if (i >= args.length)
-          showError(null, "Argument required for --pref", 3);
+          showError(null, _("Argument required for --pref"), 3);
         processPrefArgument(args[i]);
+        continue;
+      }
+      if (args[i].equals("--preferences-file")) {
+        i++;
+        if (i >= args.length)
+          showError(null, _("Argument required for --preferences-file"), 3);
+        // Argument should be already processed by Preferences.init(...) 
         continue;
       }
       if (args[i].startsWith("--"))
@@ -407,8 +424,8 @@ public class Base {
 
     if (doUpload || doVerify) {
       // Set verbosity for command line build
-      Preferences.set("build.verbose", "" + doVerbose);
-      Preferences.set("upload.verbose", "" + doVerbose);
+      Preferences.set("build.verbose", "" + doVerboseBuild);
+      Preferences.set("upload.verbose", "" + doVerboseUpload);
 
       Editor editor = editors.get(0);
 
